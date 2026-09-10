@@ -1,0 +1,59 @@
+name: Sync Ongo and organise arcade MRAs
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "23 */6 * * *"
+
+permissions:
+  contents: write
+
+concurrency:
+  group: ongoingo-sync
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out layout tools
+        uses: actions/checkout@v4
+        with:
+          ref: layout
+          path: layout
+
+      - name: Check out the Ongo upstream
+        uses: actions/checkout@v4
+        with:
+          repository: OngoGablogian/MiSTer_Ongo
+          ref: main
+          path: upstream
+          fetch-depth: 1
+
+      - name: Create the reorganised tree
+        run: |
+          cp layout/Scripts/reorganize_mras.py upstream/Scripts/
+          cp layout/.github/workflows/sync_upstream.yml upstream/.github/workflows/
+          python3 layout/Scripts/reorganize_mras.py --root upstream --report
+
+      - name: Commit and publish the generated layout
+        env:
+          TOKEN: ${{ github.token }}
+        run: |
+          cd upstream
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git remote set-url origin "https://x-access-token:${TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
+          git add -A
+          git commit -m "Sync Ongo upstream and reorganise MRAs" || true
+          git push --force origin HEAD:main
+          git push --force origin HEAD^:upstream
+
+      - name: Build Downloader database
+        working-directory: upstream
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y detox sharutils
+          curl --fail --location https://raw.githubusercontent.com/theypsilon/Downloader_DB-Template_MiSTer/main/.github/build_db.py | python3 -
